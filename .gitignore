@@ -1,0 +1,42 @@
+# ── Credenciales y secretos ────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# Configuración con contraseñas reales
+etc/default/minio
+# (usa minio.env.example en su lugar)
+
+# ── Datos de MinIO ─────────────────────────────────────────────────────────
+data/
+/data/minio/
+
+# ── Caché de Nginx ─────────────────────────────────────────────────────────
+/var/cache/nginx/
+
+# ── Logs ───────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Certificados Let's Encrypt ─────────────────────────────────────────────
+/etc/letsencrypt/
+
+# ── OS / Editor ────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── Binario de MinIO (descargado por el script de instalación) ─────────────
+minio
+/usr/local/bin/minio

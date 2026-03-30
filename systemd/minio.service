@@ -1,0 +1,30 @@
+[Unit]
+Description=MinIO Object Storage
+Documentation=https://docs.min.io
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=minio-user
+Group=minio-user
+EnvironmentFile=/etc/default/minio
+ExecStartPre=/bin/bash -c 'if [ ! -d "$MINIO_VOLUMES" ]; then mkdir -p "$MINIO_VOLUMES"; fi'
+ExecStart=/usr/local/bin/minio server $MINIO_OPTS $MINIO_VOLUMES
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=minio
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/data/minio
+PrivateTmp=true
+ProtectHome=true
+
+# File descriptor limit (needed for high concurrency)
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
