@@ -1,0 +1,173 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# MinIO Nginx Rate Limiting Configuration
+# ══════════════════════════════════════════════════════════════════════════════
+# Protects against brute force and DDoS attacks on your MinIO storage endpoints.
+#
+# Add this to your nginx.conf at the http {} level (NOT server {} level)
+# Then uncomment and apply the limits in minio-proxy.conf location blocks.
+#
+# Usage:
+# 1. Copy this file to /etc/nginx/conf.d/minio-rate-limiting.conf
+# 2. Uncomment the limit_req directives in your location blocks
+# 3. Test: sudo nginx -t
+# 4. Reload: sudo systemctl reload nginx
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Rate limit zones (add to http {} block in /etc/nginx/nginx.conf) ──────────
+# Defines separate zones for public and private bucket requests
+
+# Public bucket: Higher limit (public content, can be cached)
+limit_req_zone $binary_remote_addr zone=minio_public_limit:10m rate=100r/s;
+
+# Private bucket: Lower limit (authenticated, more sensitive)
+limit_req_zone $binary_remote_addr zone=minio_private_limit:10m rate=50r/s;
+
+# Signature-protected requests: Very strict (prevent signature brute-force)
+limit_req_zone "$binary_remote_addr:$arg_X-Amz-Signature" zone=minio_sig_limit:10m rate=10r/s;
+
+# ── Optional: Global rate limit for all media requests ────────────────────────
+limit_req_zone $binary_remote_addr zone=minio_global_limit:10m rate=200r/s;
+
+# ── Rate limit status codes to log (optional) ────────────────────────────────
+# Log these in your Nginx access.log for monitoring
+# 429 = Too Many Requests
+# See /var/log/nginx/error.log for limit_req_status messages
+
+# ══════════════════════════════════════════════════════════════════════════════
+# APPLY TO LOCATION BLOCKS
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# In /etc/nginx/conf.d/minio-proxy.conf (or your server block):
+#
+# location /media/YOUR_PUBLIC_BUCKET/ {
+#     limit_req zone=minio_public_limit burst=200 nodelay;
+#     limit_req_status 429;
+#     ...rest of config
+# }
+#
+# location /media/YOUR_PRIVATE_BUCKET/ {
+#     limit_req zone=minio_private_limit burst=100 nodelay;
+#     limit_req_status 429;
+#     ...rest of config
+# }
+#
+# ══════════════════════════════════════════════════════════════════════════════
+# PARAMETERS EXPLAINED
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# zone=ZONE_NAME:10m
+#   - Name of the rate limit zone (can be any string)
+#   - 10m = 10MB shared memory for storing request data
+#   - Larger zones store more IP addresses; adjust if you have >10k unique IPs
+#
+# rate=100r/s
+#   - 100 requests per second per IP address
+#   - Use r/s (per second), r/m (per minute), etc.
+#   - For public bucket: 100-200 r/s (tune to your traffic)
+#   - For private bucket: 10-50 r/s (more conservative)
+#
+# burst=200
+#   - Allow temporary bursts up to 200 extra requests
+#   - Without burst, every request over rate gets 429
+#   - With burst, queues requests up to burst amount
+#
+# nodelay
+#   - Return 429 immediately instead of queueing
+#   - Recommended for API/S3 usage (not web pages)
+#   - Remove if you want graceful queueing
+#
+# $binary_remote_addr
+#   - Client IP address (more efficient than $remote_addr)
+#   - Groups limits by IP
+#
+# $arg_X-Amz-Signature
+#   - Query string parameter X-Amz-Signature
+#   - Useful for limiting signature-based attacks
+#
+# ══════════════════════════════════════════════════════════════════════════════
+# RECOMMENDED VALUES BY SCENARIO
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Development / Testing:
+#   Public:  100r/s burst 500 nodelay
+#   Private: 50r/s burst 200 nodelay
+#
+# Small Production (< 100 concurrent users):
+#   Public:  50r/s burst 200 nodelay
+#   Private: 10r/s burst 50 nodelay
+#
+# Medium Production (100-1000 users):
+#   Public:  100r/s burst 500 nodelay
+#   Private: 20r/s burst 100 nodelay
+#
+# High-Traffic Production (> 1000 users):
+#   Public:  200r/s burst 1000 nodelay
+#   Private: 50r/s burst 200 nodelay
+#   (Also consider CDN or WAF layer)
+#
+# ══════════════════════════════════════════════════════════════════════════════
+# MONITORING & TROUBLESHOOTING
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Watch for rate limiting hits:
+#   tail -f /var/log/nginx/error.log | grep "limiting requests"
+#
+# Count how many 429 responses per hour:
+#   grep "429" /var/log/nginx/access.log | wc -l
+#
+# Find IPs that are being rate limited:
+#   grep "limiting requests" /var/log/nginx/error.log | awk '{print $11}' | sort | uniq -c | sort -rn
+#
+# If you're getting legitimate 429 errors on valid traffic:
+#   1. Increase the 'rate' value
+#   2. Increase the 'burst' value
+#   3. Check if a crawler or API client is making too many requests
+#   4. Add a whitelist (example below)
+#
+# ══════════════════════════════════════════════════════════════════════════════
+# WHITELISTING (OPTIONAL)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# If certain IPs (e.g., internal services, CDN) should bypass limits:
+#
+# geo $bypass_rate_limiting {
+#     default 0;
+#     10.0.0.0/8 1;           # Internal network
+#     203.0.113.0/24 1;       # Your office IP
+# }
+#
+# limit_req_zone $binary_remote_addr zone=minio_public_limit:10m rate=100r/s;
+#
+# location /media/YOUR_PUBLIC_BUCKET/ {
+#     if ($bypass_rate_limiting) {
+#         # Skip rate limiting for whitelisted IPs
+#         return 418;  # (just to show the flow; adjust as needed)
+#     }
+#     limit_req zone=minio_public_limit burst=200 nodelay;
+#     ...
+# }
+#
+# ══════════════════════════════════════════════════════════════════════════════
+# ALERTING (OPTIONAL)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Send alerts when rate limiting is triggered:
+#   1. Monitor /var/log/nginx/error.log for "limiting requests" pattern
+#   2. Parse with tools like Fail2Ban to auto-block repeated offenders
+#   3. Set up Prometheus/Telegraf to scrape Nginx metrics
+#
+# Example Fail2Ban config to block IPs with >50 rate limit hits/hour:
+#
+# [Filter]
+# failregex = limiting requests
+# ignoreregex =
+#
+# [Jail]
+# enabled = true
+# action = iptables-multiport[name=nginx-ratelimit, port=http,https]
+# logpath = /var/log/nginx/error.log
+# findtime = 3600
+# maxretry = 50
+# bantime = 3600
+#
+# ══════════════════════════════════════════════════════════════════════════════

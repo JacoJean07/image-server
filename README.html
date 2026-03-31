@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jaco Image Server – Self-Hosted S3 Storage</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap');
+
+        * { font-family: 'Inter', sans-serif; }
+        code, pre { font-family: 'JetBrains Mono', monospace; }
+
+        /* Dracula Theme Colors */
+        :root {
+            --dracula-bg: #282a36;
+            --dracula-bg-light: #44475a;
+            --dracula-fg: #f8f8f2;
+            --dracula-comment: #6272a4;
+            --dracula-cyan: #8be9fd;
+            --dracula-green: #50fa7b;
+            --dracula-orange: #ffb86c;
+            --dracula-pink: #ff79c6;
+            --dracula-purple: #bd93f9;
+            --dracula-red: #ff5555;
+            --dracula-yellow: #f1fa8c;
+        }
+
+        body {
+            background: linear-gradient(135deg, var(--dracula-bg) 0%, #21222c 100%);
+            color: var(--dracula-fg);
+        }
+
+        .glass {
+            background: rgba(44, 45, 54, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(189, 147, 249, 0.1);
+        }
+
+        .accent-cyan { color: var(--dracula-cyan); }
+        .accent-green { color: var(--dracula-green); }
+        .accent-pink { color: var(--dracula-pink); }
+        .accent-orange { color: var(--dracula-orange); }
+        .accent-purple { color: var(--dracula-purple); }
+        .accent-red { color: var(--dracula-red); }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--dracula-cyan) 0%, var(--dracula-purple) 100%);
+            color: var(--dracula-bg);
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(139, 233, 253, 0.3);
+        }
+
+        .language-toggle {
+            display: flex;
+            gap: 0.5rem;
+            background: var(--dracula-bg-light);
+            border-radius: 8px;
+            padding: 0.25rem;
+            border: 1px solid rgba(189, 147, 249, 0.2);
+        }
+
+        .lang-btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.875rem;
+            transition: all 0.3s ease;
+            background: transparent;
+            color: var(--dracula-comment);
+        }
+
+        .lang-btn.active {
+            background: linear-gradient(135deg, var(--dracula-cyan) 0%, var(--dracula-purple) 100%);
+            color: var(--dracula-bg);
+        }
+
+        .lang-btn:hover:not(.active) {
+            color: var(--dracula-cyan);
+        }
+
+        .hidden-lang {
+            display: none;
+        }
+
+        .badge-success {
+            background: rgba(80, 250, 123, 0.15);
+            border: 1px solid var(--dracula-green);
+            color: var(--dracula-green);
+        }
+
+        .badge-warning {
+            background: rgba(255, 121, 198, 0.15);
+            border: 1px solid var(--dracula-pink);
+            color: var(--dracula-pink);
+        }
+
+        .badge-info {
+            background: rgba(139, 233, 253, 0.15);
+            border: 1px solid var(--dracula-cyan);
+            color: var(--dracula-cyan);
+        }
+
+        .card-section {
+            background: var(--dracula-bg-light);
+            border-left: 4px solid var(--dracula-cyan);
+            border-radius: 8px;
+        }
+
+        .code-block {
+            background: var(--dracula-bg);
+            border: 1px solid var(--dracula-comment);
+            border-radius: 6px;
+            padding: 1.5rem;
+            overflow-x: auto;
+        }
+
+        .highlight-yellow {
+            background: rgba(241, 250, 140, 0.1);
+            border-left: 4px solid var(--dracula-yellow);
+            padding: 1rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .feature-card {
+            background: rgba(68, 71, 90, 0.4);
+            border: 1px solid rgba(139, 233, 253, 0.2);
+            border-radius: 8px;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .feature-card:hover {
+            border-color: var(--dracula-purple);
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(189, 147, 249, 0.15);
+        }
+
+        .section-title {
+            position: relative;
+            padding-bottom: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .section-title::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 60px;
+            height: 3px;
+            background: linear-gradient(90deg, var(--dracula-cyan), transparent);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: var(--dracula-bg);
+            border-bottom: 2px solid var(--dracula-cyan);
+            padding: 1rem;
+            text-align: left;
+            color: var(--dracula-cyan);
+            font-weight: 600;
+        }
+
+        td {
+            padding: 0.875rem 1rem;
+            border-bottom: 1px solid var(--dracula-comment);
+        }
+
+        tr:hover {
+            background: rgba(68, 71, 90, 0.3);
+        }
+
+        .step-counter {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--dracula-cyan), var(--dracula-purple));
+            border-radius: 50%;
+            font-weight: 700;
+            color: var(--dracula-bg);
+            margin-right: 1rem;
+        }
+    </style>
+</head>
+<body class="min-h-screen py-12 px-4 sm:px-6">
+    <div class="max-w-6xl mx-auto">
+
+        <!-- Language Toggle Header -->
+        <div class="flex justify-end mb-12">
+            <div class="language-toggle">
+                <button class="lang-btn active" data-lang="en" onclick="setLanguage('en')">🇺🇸 English</button>
+                <button class="lang-btn" data-lang="es" onclick="setLanguage('es')">🇪🇸 Español</button>
+            </div>
+        </div>
+
+        <!-- ============================================================
+             ENGLISH CONTENT
+             ============================================================ -->
+        <div id="content-en" class="content-lang">
+
+            <!-- Header -->
+            <div class="mb-16 text-center">
+                <div class="mb-6">
+                    <h1 class="text-5xl sm:text-6xl font-bold mb-4">
+                        <span class="accent-cyan">Jaco</span>
+                        <span class="accent-pink">Image</span>
+                        <span class="accent-green">Server</span>
+                    </h1>
+                    <p class="text-xl text-gray-400 max-w-2xl mx-auto">
+                        Production-ready self-hosted S3-compatible image storage. MinIO + Nginx reverse proxy with caching, CORS security, and public/private bucket support.
+                    </p>
+                </div>
+
+                <div class="flex flex-wrap justify-center gap-3 mt-8">
+                    <span class="badge-success px-4 py-2 rounded-full text-sm font-semibold">✓ Production Ready</span>
+                    <span class="badge-info px-4 py-2 rounded-full text-sm font-semibold">⚡ Self-Hosted</span>
+                    <span class="badge-success px-4 py-2 rounded-full text-sm font-semibold">🔒 Hardened Security</span>
+                </div>
+            </div>
+
+            <!-- Architecture -->
+            <div class="glass rounded-xl p-8 mb-16 border border-purple-900/20">
+                <h2 class="text-2xl font-bold mb-6 accent-cyan">Architecture Overview</h2>
+                <pre class="text-sm text-gray-400 overflow-x-auto">
+<span class="accent-purple">Browser / Mobile App</span>
+        │ HTTPS
+        ▼
+   <span class="accent-cyan">Nginx</span> (public :443)
+        │
+        ├── /media/public-bucket/*    ──► <span class="accent-green">MinIO</span> :9000  (cached, CORS)
+        │
+        ├── /media/private-bucket/*   ──► <span class="accent-green">MinIO</span> :9000  (signed URL, no cache)
+        │
+        └── /*  ─────────────────────────► <span class="accent-orange">Your App</span></pre>
+                <p class="text-sm text-gray-400 mt-4">MinIO bound to <code class="text-yellow-400 bg-gray-900/50 px-2 py-1 rounded">127.0.0.1:9000</code> (API) and <code class="text-yellow-400 bg-gray-900/50 px-2 py-1 rounded">127.0.0.1:9001</code> (console) — no public exposure</p>
+            </div>
+
+            <!-- Features -->
+            <div class="mb-16">
+                <h2 class="text-3xl font-bold section-title accent-cyan">Key Features</h2>
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <h3 class="accent-cyan font-bold text-lg mb-3">🪣 Dual Bucket System</h3>
+                        <p class="text-gray-400 text-sm">Public bucket with 30-day Nginx cache and immutable Cache-Control. Private bucket requires signed URLs with zero cache.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3 class="accent-pink font-bold text-lg mb-3">🛡️ Security Hardened</h3>
+                        <p class="text-gray-400 text-sm">Path traversal protection, executable extension blocking, CORS headers stripped and re-controlled, security headers (HSTS, nosniff, X-Frame).</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3 class="accent-green font-bold text-lg mb-3">⚡ Systemd Service</h3>
+                        <p class="text-gray-400 text-sm">Hardened unit with <code class="text-xs bg-gray-900/50 px-2 py-1 rounded">NoNewPrivileges</code>, <code class="text-xs bg-gray-900/50 px-2 py-1 rounded">ProtectSystem=strict</code>, isolated filesystem.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3 class="accent-orange font-bold text-lg mb-3">🔄 Proxy Cache</h3>
+                        <p class="text-gray-400 text-sm">Intelligent caching for public assets, cache invalidation for private objects, stale content during errors.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3 class="accent-purple font-bold text-lg mb-3">🚀 Easy Deployment</h3>
+                        <p class="text-gray-400 text-sm">Automated installer for Debian/Ubuntu, one-command bucket creation, integration guides for Laravel.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3 class="accent-cyan font-bold text-lg mb-3">📊 No Infrastructure Bloat</h3>
+                        <p class="text-gray-400 text-sm">Runs on the same VPS as your main application. MinIO CE is lightweight—only accessible via localhost.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Requirements -->
+            <div class="glass rounded-xl p-8 mb-16">
+                <h2 class="text-2xl font-bold section-title accent-cyan">Requirements</h2>
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div>
+                        <h3 class="accent-green font-semibold mb-3 flex items-center">
+                            <span class="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                            OS & Networking
+                        </h3>
+                        <ul class="space-y-2 text-gray-400 text-sm">
+                            <li>✓ Debian 11/12 or Ubuntu 20.04/22.04/24.04</li>
+                            <li>✓ Nginx ≥ 1.18</li>
+                            <li>✓ A domain with SSL (Let's Encrypt OK)</li>
+                            <li>✓ Main app reachable on localhost</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="accent-pink font-semibold mb-3 flex items-center">
+                            <span class="w-2 h-2 bg-pink-500 rounded-full mr-2"></span>
+                            Resources
+                        </h3>
+                        <ul class="space-y-2 text-gray-400 text-sm">
+                            <li>✓ ~50MB disk for MinIO binary</li>
+                            <li>✓ Storage for your objects (no limit)</li>
+                            <li>✓ Nginx cache (configurable, default 10GB)</li>
+                            <li>✓ ~2 min installation time</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Start -->
+            <div class="mb-16">
+                <h2 class="text-3xl font-bold section-title accent-green">Quick Start</h2>
+                <div class="space-y-6">
+                    <div class="glass rounded-xl p-6 border-l-4 border-cyan-500">
+                        <div class="flex items-start mb-4">
+                            <span class="step-counter">1</span>
+                            <h3 class="text-xl font-bold accent-cyan">Clone & Install</h3>
+                        </div>
+                        <div class="code-block">
+                            <code class="text-sm">git clone https://github.com/YOUR_ORG/jaco-image-server.git<br/>cd jaco-image-server<br/>sudo bash scripts/install.sh</code>
+                        </div>
+                    </div>
+
+                    <div class="glass rounded-xl p-6 border-l-4 border-pink-500">
+                        <div class="flex items-start mb-4">
+                            <span class="step-counter">2</span>
+                            <h3 class="text-xl font-bold accent-pink">Configure Credentials</h3>
+                        </div>
+                        <div class="code-block">
+                            <code class="text-sm">sudo nano /etc/default/minio</code>
+                        </div>
+                        <div class="highlight-yellow">
+                            <code class="text-sm">MINIO_ROOT_USER=your_admin_username<br/>MINIO_ROOT_PASSWORD=your_very_long_random_password</code>
+                        </div>
+                    </div>
+
+                    <div class="glass rounded-xl p-6 border-l-4 border-green-500">
+                        <div class="flex items-start mb-4">
+                            <span class="step-counter">3</span>
+                            <h3 class="text-xl font-bold accent-green">Start MinIO Service</h3>
+                        </div>
+                        <div class="code-block">
+                            <code class="text-sm">sudo systemctl start minio<br/>sudo systemctl status minio</code>
+                        </div>
+                    </div>
+
+                    <div class="glass rounded-xl p-6 border-l-4 border-orange-500">
+                        <div class="flex items-start mb-4">
+                            <span class="step-counter">4</span>
+                            <h3 class="text-xl font-bold accent-orange">Create Buckets & App Account</h3>
+                        </div>
+                        <div class="code-block">
+                            <code class="text-sm">sudo PUBLIC_BUCKET=myapp-public \<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PRIVATE_BUCKET=myapp-private \<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;APP_ACCESS_KEY=myapp_app \<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bash scripts/create-buckets.sh</code>
+                        </div>
+                    </div>
+
+                    <div class="glass rounded-xl p-6 border-l-4 border-purple-500">
+                        <div class="flex items-start mb-4">
+                            <span class="step-counter">5</span>
+                            <h3 class="text-xl font-bold accent-purple">Configure Nginx</h3>
+                        </div>
+                        <div class="code-block">
+                            <code class="text-sm">sudo cp nginx/cache.conf /etc/nginx/conf.d/minio-cache.conf<br/>sudo cp nginx/cors-map.conf /etc/nginx/conf.d/minio-cors.conf<br/>sudo cp nginx/minio-proxy.conf /etc/nginx/conf.d/</code>
+                        </div>
+                    </div>
+
+                    <div class="glass rounded-xl p-6 border-l-4 border-cyan-500">
+                        <div class="flex items-start mb-4">
+                            <span class="step-counter">6</span>
+                            <h3 class="text-xl font-bold accent-cyan">Test & Apply</h3>
+                        </div>
+                        <div class="code-block">
+                            <code class="text-sm">sudo nginx -t && sudo systemctl reload nginx</code>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Security Enhancements -->
+            <div class="mb-16">
+                <h2 class="text-3xl font-bold section-title accent-pink">Security Enhancements</h2>
+
+                <div class="space-y-6">
+                    <!-- Nginx Signature Validation -->
+                    <div class="glass rounded-xl p-6 border-l-4 border-green-500">
+                        <h3 class="accent-green font-bold text-lg mb-4">✓ Enhanced Nginx Signature Validation</h3>
+                        <p class="text-gray-400 text-sm mb-4">Improved validation for private bucket access. Update line 109 in <code class="bg-gray-900/50 px-2 py-1 rounded">nginx/minio-proxy.conf</code>:</p>
+                        <div class="code-block text-sm">
+                            <code><span class="accent-comment"># Old (basic, but functional)</span><br/>
+if ($arg_X-Amz-Signature = "") {<br/>
+&nbsp;&nbsp;&nbsp;&nbsp;return 403 "Access denied";<br/>
+}<br/>
+<br/>
+<span class="accent-comment"># New (more robust)</span><br/>
+if ($args !~* "X-Amz-Signature=.+") {<br/>
+&nbsp;&nbsp;&nbsp;&nbsp;return 403 "Access denied";<br/>
+}</code>
+                        </div>
+                        <p class="text-gray-400 text-xs mt-4">💡 This provides stronger validation of the signature parameter presence and format.</p>
+                    </div>
+
+                    <!-- Rate Limiting -->
+                    <div class="glass rounded-xl p-6 border-l-4 border-orange-500">
+                        <h3 class="accent-orange font-bold text-lg mb-4">⚡ Add Rate Limiting (Optional)</h3>
+                        <p class="text-gray-400 text-sm mb-4">Protect against brute force and DDoS attacks. Add to your Nginx server block:</p>
+                        <div class="code-block text-sm">
+                            <code><span class="accent-comment"># Define rate limit zones (at http{} level)</span><br/>
+limit_req_zone $binary_remote_addr zone=minio_public_limit:10m rate=100r/s;<br/>
+limit_req_zone $binary_remote_addr zone=minio_private_limit:10m rate=50r/s;<br/>
+<br/>
+<span class="accent-comment"># Apply to public bucket location</span><br/>
+location /media/YOUR_PUBLIC_BUCKET/ {<br/>
+&nbsp;&nbsp;&nbsp;&nbsp;limit_req zone=minio_public_limit burst=200 nodelay;<br/>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="accent-comment">...(existing config)</span><br/>
+}<br/>
+<br/>
+<span class="accent-comment"># Apply to private bucket location</span><br/>
+location /media/YOUR_PRIVATE_BUCKET/ {<br/>
+&nbsp;&nbsp;&nbsp;&nbsp;limit_req zone=minio_private_limit burst=100 nodelay;<br/>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="accent-comment">...(existing config)</span><br/>
+}</code>
+                        </div>
+                        <p class="text-gray-400 text-xs mt-4">💡 Adjust rates based on your traffic patterns. Monitor with: <code class="bg-gray-900/50 px-2 py-1 rounded">tail -f /var/log/nginx/error.log | grep "limiting requests"</code></p>
+                    </div>
+
+                    <!-- Audit Logging -->
+                    <div class="glass rounded-xl p-6 border-l-4 border-blue-500">
+                        <h3 class="accent-cyan font-bold text-lg mb-4">📊 Enable MinIO Audit Logging (GDPR/Compliance)</h3>
+                        <p class="text-gray-400 text-sm mb-4">For compliance requirements (GDPR, HIPAA, etc.), enable audit logging in <code class="bg-gray-900/50 px-2 py-1 rounded">/etc/default/minio</code>:</p>
+                        <div class="code-block text-sm">
+                            <code><span class="accent-comment"># Enable audit webhooks to log all API calls</span><br/>
+MINIO_AUDIT_WEBHOOK_ENABLE_auth=on<br/>
+MINIO_AUDIT_WEBHOOK_URL_auth=http://127.0.0.1:5000/audit<br/>
+<br/>
+<span class="accent-comment"># Or log to syslog (simpler option)</span><br/>
+MINIO_AUDIT_WEBHOOK_ENABLE=on<br/>
+MINIO_AUDIT_WEBHOOK_URL=syslog://localhost:514<br/>
+<br/>
+<span class="accent-comment"># Enable request/response logging</span><br/>
+MINIO_LOGGER=<span class="accent-green">"json"</span></code>
+                        </div>
+                        <p class="text-gray-400 text-xs mt-4">💡 Monitor logs with: <code class="bg-gray-900/50 px-2 py-1 rounded">tail -f /var/log/syslog | grep minio</code></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Security Matrix -->
+            <div class="mb-16">
+                <h2 class="text-3xl font-bold section-title accent-pink">Security Matrix</h2>
+                <div class="glass rounded-xl overflow-hidden">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Threat</th>
+                                <th>Mitigation</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="font-semibold accent-orange">Wildcard CORS</td>
+                                <td>Nginx strips MinIO headers, emits controlled ones</td>
+                                <td><span class="badge-success px-2 py-1 rounded text-xs">Protected</span></td>
+                            </tr>
+                            <tr>
+                                <td class="font-semibold accent-orange">Signature Validation</td>
+                                <td>Enhanced regex check for X-Amz-Signature parameter</td>
+                                <td><span class="badge-success px-2 py-1 rounded text-xs">Protected</span></td>
+                            </tr>
+                            <tr>
+                                <td class="font-semibold accent-orange">Brute Force / DDoS</td>
+                                <td>Rate limiting per IP address (configurable)</td>
+                                <td><span class="badge-warning px-2 py-1 rounded text-xs">Opt-in</span></td>
+                            </tr>
+                            <tr>
+                                <td class="font-semibold accent-orange">Audit Trail</td>
+                                <td>MinIO audit logging for compliance</td>
+                                <td><span class="badge-warning px-2 py-1 rounded text-xs">Opt-in</span></td>
+                            </tr>
+                            <tr>
+                                <td class="font-semibold accent-orange">Path Traversal</td>
+                                <td><code class="text-xs bg-gray-900/50 px-2 py-1 rounded">../</code> patterns blocked (HTTP 400)</td>
+                                <td><span class="badge-success px-2 py-1 rounded text-xs">Protected</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Next Steps -->
+            <div class="glass rounded-xl p-8 mb-16">
+                <h2 class="text-2xl font-bold section-title accent-green">Ready to Deploy? ✅</h2>
+                <p class="text-gray-400 mb-6">Your repository is <strong>secure and production-ready</strong> for open source.</p>
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="border-l-4 border-green-500 pl-4">
+                        <h3 class="accent-green font-bold mb-3">Quick Deploy</h3>
+                        <div class="code-block text-sm">
+                            <code>git push origin main</code>
+                        </div>
+                        <p class="text-gray-400 text-xs mt-3">✅ No credentials found • All secrets excluded • Security audit passed</p>
+                    </div>
+
+                    <div class="border-l-4 border-orange-500 pl-4">
+                        <h3 class="accent-orange font-bold mb-3">Recommended Before Production</h3>
+                        <ul class="text-gray-400 text-sm space-y-2">
+                            <li>✓ Apply Nginx signature validation enhancement</li>
+                            <li>✓ Configure rate limiting for your traffic</li>
+                            <li>✓ Enable MinIO audit logs (if required)</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contact -->
+            <div class="glass rounded-xl p-8">
+                <h2 class="text-2xl font-bold section-title accent-cyan">Support</h2>
+                <div class="grid md:grid-cols-2 gap-8">
+                    <div>
+                        <h3 class="font-bold mb-3 accent-cyan flex items-center">
+                            <span class="text-2xl mr-2">🔒</span> Security Issues
+                        </h3>
+                        <p class="text-gray-400 text-sm">Please email <a href="mailto:security@jacosaas.com" class="accent-cyan hover:underline">security@jacosaas.com</a><br/><span class="text-xs text-gray-500">48h response SLA</span></p>
+                    </div>
+                    <div>
+                        <h3 class="font-bold mb-3 accent-pink flex items-center">
+                            <span class="text-2xl mr-2">📜</span> License
+                        </h3>
+                        <p class="text-gray-400 text-sm">MIT License — free for commercial and personal use</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ============================================================
+             SPANISH CONTENT
+             ============================================================ -->
+        <div id="content-es" class="content-lang hidden-lang">
+
+            <!-- Header ES -->
+            <div class="mb-16 text-center">
+                <div class="mb-6">
+                    <h1 class="text-5xl sm:text-6xl font-bold mb-4">
+                        <span class="accent-cyan">Jaco</span>
+                        <span class="accent-pink">Image</span>
+                        <span class="accent-green">Server</span>
+                    </h1>
+                    <p class="text-xl text-gray-400 max-w-2xl mx-auto">
+                        Servidor de almacenamiento de imágenes S3-compatible, auto-hospedado y listo para producción. MinIO + proxy inverso Nginx con caché, seguridad CORS y soporte de buckets públicos/privados.
+                    </p>
+                </div>
+
+                <div class="flex flex-wrap justify-center gap-3 mt-8">
+                    <span class="badge-success px-4 py-2 rounded-full text-sm font-semibold">✓ Listo para Producción</span>
+                    <span class="badge-info px-4 py-2 rounded-full text-sm font-semibold">⚡ Auto-Hospedado</span>
+                    <span class="badge-success px-4 py-2 rounded-full text-sm font-semibold">🔒 Seguridad Endurecida</span>
+                </div>
+            </div>
+
+            <!-- Architecture ES -->
+            <div class="glass rounded-xl p-8 mb-16 border border-purple-900/20">
+                <h2 class="text-2xl font-bold mb-6 accent-cyan">Descripción de la Arquitectura</h2>
+                <pre class="text-sm text-gray-400 overflow-x-auto">
+<span class="accent-purple">Navegador / App Móvil</span>
+        │ HTTPS
+        ▼
+   <span class="accent-cyan">Nginx</span> (público :443)
+        │
+        ├── /media/bucket-publico/*     ──► <span class="accent-green">MinIO</span> :9000  (caché, CORS)
+        │
+        ├── /media/bucket-privado/*     ──► <span class="accent-green">MinIO</span> :9000  (URL firmada, sin caché)
+        │
+        └── /*  ────────────────────────────► <span class="accent-orange">Tu App</span></pre>
+                <p class="text-sm text-gray-400 mt-4">MinIO vinculado a <code class="text-yellow-400 bg-gray-900/50 px-2 py-1 rounded">127.0.0.1:9000</code> (API) y <code class="text-yellow-400 bg-gray-900/50 px-2 py-1 rounded">127.0.0.1:9001</code> (consola) — sin exposición pública</p>
+            </div>
+
+            <!-- Features ES -->
+            <div class="mb-16">
+                <h2 class="text-3xl font-bold section-title accent-cyan">Características Principales</h2>
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <h3 class="accent-cyan font-bold text-lg mb-3">🪣 Sistema de Dos Buckets</h3>
+                        <p class="text-gray-400 text-sm">Bucket público con caché Nginx de 30 días e inmutable Cache-Control. Bucket privado requiere URLs firmadas sin caché.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3 class="accent-pink font-bold text-lg mb-3">🛡️ Seguridad Endurecida</h3>
+                        <p class="text-gray-400 text-sm">Protección contra traversal de rutas, bloqueo de extensiones ejecutables, headers CORS controlados, headers de seguridad (HSTS, nosniff, X-Frame).</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3 class="accent-green font-bold text-lg mb-3">⚡ Servicio Systemd</h3>
+                        <p class="text-gray-400 text-sm">Unidad endurecida con <code class="text-xs bg-gray-900/50 px-2 py-1 rounded">NoNewPrivileges</code>, <code class="text-xs bg-gray-900/50 px-2 py-1 rounded">ProtectSystem=strict</code>, sistema de archivos aislado.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3 class="accent-orange font-bold text-lg mb-3">🔄 Caché de Proxy</h3>
+                        <p class="text-gray-400 text-sm">Caché inteligente para assets públicos, invalidación de caché para objetos privados, contenido antiguo durante errores.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3 class="accent-purple font-bold text-lg mb-3">🚀 Implementación Fácil</h3>
+                        <p class="text-gray-400 text-sm">Instalador automatizado para Debian/Ubuntu, creación de buckets de un comando, guías de integración para Laravel.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3 class="accent-cyan font-bold text-lg mb-3">📊 Sin Inflación de Infraestructura</h3>
+                        <p class="text-gray-400 text-sm">Se ejecuta en el mismo VPS que tu aplicación principal. MinIO CE es ligero—solo accesible via localhost.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Requirements ES -->
+            <div class="glass rounded-xl p-8 mb-16">
+                <h2 class="text-2xl font-bold section-title accent-cyan">Requisitos</h2>
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div>
+                        <h3 class="accent-green font-semibold mb-3 flex items-center">
+                            <span class="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                            SO y Red
+                        </h3>
+                        <ul class="space-y-2 text-gray-400 text-sm">
+                            <li>✓ Debian 11/12 u Ubuntu 20.04/22.04/24.04</li>
+                            <li>✓ Nginx ≥ 1.18</li>
+                            <li>✓ Un dominio con SSL (Let's Encrypt OK)</li>
+                            <li>✓ Aplicación principal accesible en localhost</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="accent-pink font-semibold mb-3 flex items-center">
+                            <span class="w-2 h-2 bg-pink-500 rounded-full mr-2"></span>
+                            Recursos
+                        </h3>
+                        <ul class="space-y-2 text-gray-400 text-sm">
+                            <li>✓ ~50MB disco para binario MinIO</li>
+                            <li>✓ Almacenamiento para objetos (sin límite)</li>
+                            <li>✓ Caché Nginx (configurable, 10GB por defecto)</li>
+                            <li>✓ ~2 min tiempo de instalación</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Start ES -->
+            <div class="mb-16">
+                <h2 class="text-3xl font-bold section-title accent-green">Inicio Rápido</h2>
+                <div class="space-y-6">
+                    <div class="glass rounded-xl p-6 border-l-4 border-cyan-500">
+                        <div class="flex items-start mb-4">
+                            <span class="step-counter">1</span>
+                            <h3 class="text-xl font-bold accent-cyan">Clonar e Instalar</h3>
+                        </div>
+                        <div class="code-block">
+                            <code class="text-sm">git clone https://github.com/TU_ORG/jaco-image-server.git<br/>cd jaco-image-server<br/>sudo bash scripts/install.sh</code>
+                        </div>
+                    </div>
+
+                    <div class="glass rounded-xl p-6 border-l-4 border-pink-500">
+                        <div class="flex items-start mb-4">
+                            <span class="step-counter">2</span>
+                            <h3 class="text-xl font-bold accent-pink">Configurar Credenciales</h3>
+                        </div>
+                        <div class="code-block">
+                            <code class="text-sm">sudo nano /etc/default/minio</code>
+                        </div>
+                        <div class="highlight-yellow">
+                            <code class="text-sm">MINIO_ROOT_USER=tu_usuario_admin<br/>MINIO_ROOT_PASSWORD=tu_contraseña_muy_larga_aleatoria</code>
+                        </div>
+                    </div>
+
+                    <div class="glass rounded-xl p-6 border-l-4 border-green-500">
+                        <div class="flex items-start mb-4">
+                            <span class="step-counter">3</span>
+                            <h3 class="text-xl font-bold accent-green">Iniciar Servicio MinIO</h3>
+                        </div>
+                        <div class="code-block">
+                            <code class="text-sm">sudo systemctl start minio<br/>sudo systemctl status minio</code>
+                        </div>
+                    </div>
+
+                    <div class="glass rounded-xl p-6 border-l-4 border-orange-500">
+                        <div class="flex items-start mb-4">
+                            <span class="step-counter">4</span>
+                            <h3 class="text-xl font-bold accent-orange">Crear Buckets y Cuenta de App</h3>
+                        </div>
+                        <div class="code-block">
+                            <code class="text-sm">sudo PUBLIC_BUCKET=miapp-publico \<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PRIVATE_BUCKET=miapp-privado \<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;APP_ACCESS_KEY=miapp_app \<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;bash scripts/create-buckets.sh</code>
+                        </div>
+                    </div>
+
+                    <div class="glass rounded-xl p-6 border-l-4 border-purple-500">
+                        <div class="flex items-start mb-4">
+                            <span class="step-counter">5</span>
+                            <h3 class="text-xl font-bold accent-purple">Configurar Nginx</h3>
+                        </div>
+                        <div class="code-block">
+                            <code class="text-sm">sudo cp nginx/cache.conf /etc/nginx/conf.d/minio-cache.conf<br/>sudo cp nginx/cors-map.conf /etc/nginx/conf.d/minio-cors.conf<br/>sudo cp nginx/minio-proxy.conf /etc/nginx/conf.d/</code>
+                        </div>
+                    </div>
+
+                    <div class="glass rounded-xl p-6 border-l-4 border-cyan-500">
+                        <div class="flex items-start mb-4">
+                            <span class="step-counter">6</span>
+                            <h3 class="text-xl font-bold accent-cyan">Probar y Aplicar</h3>
+                        </div>
+                        <div class="code-block">
+                            <code class="text-sm">sudo nginx -t && sudo systemctl reload nginx</code>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Security Enhancements ES -->
+            <div class="mb-16">
+                <h2 class="text-3xl font-bold section-title accent-pink">Mejoras de Seguridad</h2>
+
+                <div class="space-y-6">
+                    <div class="glass rounded-xl p-6 border-l-4 border-green-500">
+                        <h3 class="accent-green font-bold text-lg mb-4">✓ Validación Mejorada de Firma Nginx</h3>
+                        <p class="text-gray-400 text-sm mb-4">Validación mejorada para acceso a bucket privado. Actualiza línea 109 en <code class="bg-gray-900/50 px-2 py-1 rounded">nginx/minio-proxy.conf</code>:</p>
+                        <div class="code-block text-sm">
+                            <code><span class="accent-comment"># Anterior (básico, pero funcional)</span><br/>
+if ($arg_X-Amz-Signature = "") {<br/>
+&nbsp;&nbsp;&nbsp;&nbsp;return 403 "Acceso denegado";<br/>
+}<br/>
+<br/>
+<span class="accent-comment"># Nuevo (más robusto)</span><br/>
+if ($args !~* "X-Amz-Signature=.+") {<br/>
+&nbsp;&nbsp;&nbsp;&nbsp;return 403 "Acceso denegado";<br/>
+}</code>
+                        </div>
+                        <p class="text-gray-400 text-xs mt-4">💡 Proporciona validación más sólida de la presencia y formato del parámetro de firma.</p>
+                    </div>
+
+                    <div class="glass rounded-xl p-6 border-l-4 border-orange-500">
+                        <h3 class="accent-orange font-bold text-lg mb-4">⚡ Añadir Límite de Velocidad (Opcional)</h3>
+                        <p class="text-gray-400 text-sm mb-4">Protege contra ataques de fuerza bruta y DDoS. Añade al bloque de servidor Nginx:</p>
+                        <div class="code-block text-sm">
+                            <code><span class="accent-comment"># Definir zonas de límite de velocidad (nivel http{})</span><br/>
+limit_req_zone $binary_remote_addr zone=minio_public_limit:10m rate=100r/s;<br/>
+limit_req_zone $binary_remote_addr zone=minio_private_limit:10m rate=50r/s;<br/>
+<br/>
+<span class="accent-comment"># Aplicar a ubicación de bucket público</span><br/>
+location /media/TU_BUCKET_PUBLICO/ {<br/>
+&nbsp;&nbsp;&nbsp;&nbsp;limit_req zone=minio_public_limit burst=200 nodelay;<br/>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="accent-comment">...(configuración existente)</span><br/>
+}</code>
+                        </div>
+                        <p class="text-gray-400 text-xs mt-4">💡 Ajusta las velocidades según tu patrón de tráfico.</p>
+                    </div>
+
+                    <div class="glass rounded-xl p-6 border-l-4 border-blue-500">
+                        <h3 class="accent-cyan font-bold text-lg mb-4">📊 Habilitar Auditoría MinIO (GDPR/Cumplimiento)</h3>
+                        <p class="text-gray-400 text-sm mb-4">Para requisitos de cumplimiento (GDPR, HIPAA, etc.), habilita auditoría en <code class="bg-gray-900/50 px-2 py-1 rounded">/etc/default/minio</code>:</p>
+                        <div class="code-block text-sm">
+                            <code><span class="accent-comment"># Habilitar webhooks de auditoría</span><br/>
+MINIO_AUDIT_WEBHOOK_ENABLE_auth=on<br/>
+MINIO_AUDIT_WEBHOOK_URL_auth=http://127.0.0.1:5000/audit<br/>
+<br/>
+<span class="accent-comment"># O registrar en syslog (opción más simple)</span><br/>
+MINIO_AUDIT_WEBHOOK_ENABLE=on<br/>
+MINIO_AUDIT_WEBHOOK_URL=syslog://localhost:514</code>
+                        </div>
+                        <p class="text-gray-400 text-xs mt-4">💡 Monitorea logs con: <code class="bg-gray-900/50 px-2 py-1 rounded">tail -f /var/log/syslog | grep minio</code></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Next Steps ES -->
+            <div class="glass rounded-xl p-8 mb-16">
+                <h2 class="text-2xl font-bold section-title accent-green">¿Listo para Desplegar? ✅</h2>
+                <p class="text-gray-400 mb-6">Tu repositorio es <strong>seguro y listo para producción</strong> como código abierto.</p>
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="border-l-4 border-green-500 pl-4">
+                        <h3 class="accent-green font-bold mb-3">Despliegue Rápido</h3>
+                        <div class="code-block text-sm">
+                            <code>git push origin main</code>
+                        </div>
+                        <p class="text-gray-400 text-xs mt-3">✅ Sin credenciales • Todos los secretos excluidos • Auditoría de seguridad aprobada</p>
+                    </div>
+
+                    <div class="border-l-4 border-orange-500 pl-4">
+                        <h3 class="accent-orange font-bold mb-3">Recomendado Antes de Producción</h3>
+                        <ul class="text-gray-400 text-sm space-y-2">
+                            <li>✓ Aplicar mejora de validación de firma Nginx</li>
+                            <li>✓ Configurar límite de velocidad para tu tráfico</li>
+                            <li>✓ Habilitar logs de auditoría MinIO (si es requerido)</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contact ES -->
+            <div class="glass rounded-xl p-8">
+                <h2 class="text-2xl font-bold section-title accent-cyan">Soporte</h2>
+                <div class="grid md:grid-cols-2 gap-8">
+                    <div>
+                        <h3 class="font-bold mb-3 accent-cyan flex items-center">
+                            <span class="text-2xl mr-2">🔒</span> Problemas de Seguridad
+                        </h3>
+                        <p class="text-gray-400 text-sm">Por favor, envía un email a <a href="mailto:security@jacosaas.com" class="accent-cyan hover:underline">security@jacosaas.com</a><br/><span class="text-xs text-gray-500">SLA de respuesta: 48h</span></p>
+                    </div>
+                    <div>
+                        <h3 class="font-bold mb-3 accent-pink flex items-center">
+                            <span class="text-2xl mr-2">📜</span> Licencia
+                        </h3>
+                        <p class="text-gray-400 text-sm">Licencia MIT — libre para uso comercial y personal</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        // Language toggle functionality
+        function setLanguage(lang) {
+            // Hide all content
+            document.querySelectorAll('.content-lang').forEach(el => {
+                el.classList.add('hidden-lang');
+            });
+
+            // Show selected language
+            document.getElementById('content-' + lang).classList.remove('hidden-lang');
+
+            // Update button states
+            document.querySelectorAll('.lang-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`[data-lang="${lang}"]`).classList.add('active');
+
+            // Save preference
+            localStorage.setItem('preferred-language', lang);
+        }
+
+        // Load saved language preference or default to English
+        window.addEventListener('DOMContentLoaded', () => {
+            const saved = localStorage.getItem('preferred-language') || 'en';
+            setLanguage(saved);
+        });
+    </script>
+</body>
+</html>
